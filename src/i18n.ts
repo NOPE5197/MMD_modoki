@@ -132,16 +132,6 @@ export const initializeI18n = (root: ParentNode = document): UiLocale => {
     return initialLocale;
 };
 
-declare global {
-    interface Window {
-        mmdI18n?: {
-            getLocale: typeof getLocale;
-            setLocale: typeof setLocale;
-            apply: typeof applyI18nToDom;
-        };
-    }
-}
-
 if (typeof window !== "undefined") {
     window.mmdI18n = {
         getLocale,
