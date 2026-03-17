@@ -1,4 +1,6 @@
 import type { MmdManager } from "./mmd-manager";
+import { getLocale } from "./i18n";
+import { resolveBoneName, resolveModelName, resolveMorphFrameName, resolveMorphName } from "./model-localization";
 import type { BoneControlInfo, ModelInfo, MorphDisplayFrameInfo } from "./types";
 
 type BoneSliderKey = "tx" | "ty" | "tz" | "rx" | "ry" | "rz" | "camDistance" | "camFov";
@@ -15,6 +17,7 @@ export class BottomPanel {
     private morphFrames: MorphDisplayFrameInfo[] = [];
     private boneControlMap: Map<string, BoneControlInfo> = new Map();
     private currentBoneName: string | null = null;
+    private currentModelInfo: ModelInfo | null = null;
     private mmdManager: MmdManager | null = null;
     public onBoneSelectionChanged: ((boneName: string | null) => void) | null = null;
     public onRangeInputsRendered: ((root: ParentNode) => void) | null = null;
@@ -43,6 +46,7 @@ export class BottomPanel {
     }
 
     updateBoneControls(info: ModelInfo): void {
+        this.currentModelInfo = info;
         this.boneSelect.innerHTML = "";
         this.boneSliders.clear();
         this.boneSliderValues.clear();
@@ -59,10 +63,11 @@ export class BottomPanel {
             return;
         }
 
+        const locale = getLocale();
         for (const boneName of info.boneNames) {
             const option = document.createElement("option");
             option.value = boneName;
-            option.textContent = boneName;
+            option.textContent = resolveBoneName(info, boneName, locale);
             this.boneSelect.appendChild(option);
         }
 
@@ -71,6 +76,7 @@ export class BottomPanel {
     }
 
     updateMorphControls(info: ModelInfo): void {
+        this.currentModelInfo = info;
         this.morphFrameSelect.innerHTML = "";
         this.morphSliders.clear();
         this.morphFrames = info.morphDisplayFrames.length > 0
@@ -88,10 +94,11 @@ export class BottomPanel {
             return;
         }
 
+        const locale = getLocale();
         this.morphFrames.forEach((frame, index) => {
             const option = document.createElement("option");
             option.value = String(index);
-            option.textContent = frame.name;
+            option.textContent = resolveMorphFrameName(info, frame.name, locale);
             this.morphFrameSelect.appendChild(option);
         });
 
@@ -101,19 +108,46 @@ export class BottomPanel {
     }
 
     updateModelInfo(info: ModelInfo): void {
+        this.currentModelInfo = info;
         const nameEl = document.getElementById("info-model-name");
         const verticesEl = document.getElementById("info-vertices");
         const bonesEl = document.getElementById("info-bones");
         const morphsEl = document.getElementById("info-morphs");
 
-        if (nameEl) nameEl.textContent = info.name;
+        if (nameEl) nameEl.textContent = resolveModelName(info, getLocale());
         if (verticesEl) verticesEl.textContent = info.vertexCount.toLocaleString();
         if (bonesEl) bonesEl.textContent = info.boneCount.toLocaleString();
         if (morphsEl) morphsEl.textContent = info.morphCount.toLocaleString();
     }
 
+    refreshLocalizedNames(info: ModelInfo): void {
+        this.currentModelInfo = info;
+        const locale = getLocale();
+
+        for (let i = 0; i < this.boneSelect.options.length; i += 1) {
+            const option = this.boneSelect.options[i];
+            if (!option.value) continue;
+            option.textContent = resolveBoneName(info, option.value, locale);
+        }
+
+        for (let i = 0; i < this.morphFrameSelect.options.length; i += 1) {
+            const option = this.morphFrameSelect.options[i];
+            const frame = this.morphFrames[i];
+            if (!frame) continue;
+            option.textContent = resolveMorphFrameName(info, frame.name, locale);
+        }
+
+        this.updateModelInfo(info);
+
+        const selectedIndex = Number.parseInt(this.morphFrameSelect.value, 10);
+        if (!Number.isNaN(selectedIndex)) {
+            this.renderMorphFrame(selectedIndex);
+        }
+    }
+
     clearBoneControls(): void {
         this.currentBoneName = null;
+        this.currentModelInfo = null;
         this.boneSliders.clear();
         this.boneSliderValues.clear();
         this.boneControlMap.clear();
@@ -123,6 +157,7 @@ export class BottomPanel {
     }
 
     clearMorphControls(): void {
+        this.currentModelInfo = null;
         this.morphFrames = [];
         this.morphSliders.clear();
         this.morphFrameSelect.innerHTML = '<option value="">-</option>';
@@ -403,15 +438,19 @@ export class BottomPanel {
             return;
         }
 
+        const locale = getLocale();
+        const info = this.currentModelInfo;
+
         for (const morphInfo of frame.morphs) {
             const morphName = morphInfo.name;
             const morphIndex = morphInfo.index;
+            const displayName = info ? resolveMorphName(info, morphName, locale) : morphName;
             const row = document.createElement("div");
             row.className = "morph-slider-row";
 
             const label = document.createElement("label");
-            label.textContent = morphName;
-            label.title = morphName;
+            label.textContent = displayName;
+            label.title = displayName;
 
             const slider = document.createElement("input");
             slider.type = "range";

@@ -523,7 +523,7 @@ export class Timeline {
             ctx.fillStyle = col.text;
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
-            ctx.fillText(track.name, 6, y + ROW_H / 2);
+            ctx.fillText(track.displayName ?? track.name, 6, y + ROW_H / 2);
             ctx.restore();
 
             ctx.fillStyle = "rgba(255,255,255,0.04)";

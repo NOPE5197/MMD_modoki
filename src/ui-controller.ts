@@ -1,7 +1,8 @@
 import type { MmdManager, WgslMaterialShaderPresetId } from "./mmd-manager";
 import type { Timeline } from "./timeline";
 import type { BottomPanel } from "./bottom-panel";
-import { t } from "./i18n";
+import { getLocale, t } from "./i18n";
+import { resolveBoneName, resolveModelName, resolveTrackLabel } from "./model-localization";
 import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import type {
     InterpolationChannelPreview,
@@ -253,6 +254,7 @@ export class UIController {
     private syncingBoneSelection = false;
     private readonly interpolationChannelBindings = new Map<string, InterpolationChannelBinding>();
     private interpolationDragState: InterpolationDragState | null = null;
+    private keyframeTracks: KeyframeTrack[] = [];
     private appRootEl: HTMLElement;
     private busyOverlayEl: HTMLElement | null = null;
     private busyTextEl: HTMLElement | null = null;
@@ -280,6 +282,19 @@ export class UIController {
     private readonly onLocaleChanged = (): void => {
         this.applyLocalizedUiState();
         this.refreshShaderPanel();
+        this.refreshModelSelector();
+
+        const activeInfo = this.mmdManager.getActiveModelInfo();
+        if (this.mmdManager.getTimelineTarget() === "camera") {
+            this.bottomPanel.refreshLocalizedNames(this.getCameraPanelInfo());
+        } else if (activeInfo) {
+            this.bottomPanel.refreshLocalizedNames(activeInfo);
+        }
+
+        if (this.keyframeTracks.length > 0) {
+            this.timeline.setKeyframeTracks(this.localizeTracks(this.keyframeTracks));
+            this.updateTimelineEditState();
+        }
     };
 
     constructor(mmdManager: MmdManager, timeline: Timeline, bottomPanel: BottomPanel) {
@@ -1325,7 +1340,8 @@ export class UIController {
             this.refreshModelSelector();
             this.refreshShaderPanel();
             const activeLabel = active ? " [active]" : "";
-            this.showToast(`Loaded model: ${info.name} (${totalCount})${activeLabel}`, "success");
+            const displayName = resolveModelName(info, getLocale());
+            this.showToast(`Loaded model: ${displayName} (${totalCount})${activeLabel}`, "success");
         };
 
         // Motion loaded
@@ -1345,7 +1361,8 @@ export class UIController {
 
         // Keyframe data loaded
         this.mmdManager.onKeyframesLoaded = (tracks) => {
-            this.timeline.setKeyframeTracks(tracks);
+            this.keyframeTracks = tracks;
+            this.timeline.setKeyframeTracks(this.localizeTracks(tracks));
             this.syncBoneVisualizerSelection(this.timeline.getSelectedTrack());
             this.syncBottomBoneSelectionFromTimeline(this.timeline.getSelectedTrack());
             this.updateTimelineEditState();
@@ -2895,6 +2912,7 @@ export class UIController {
     private refreshModelSelector(): void {
         const models = this.mmdManager.getLoadedModels();
         const timelineTarget = this.mmdManager.getTimelineTarget();
+        const locale = getLocale();
         this.modelSelect.innerHTML = "";
 
         const cameraOption = document.createElement("option");
@@ -2909,9 +2927,11 @@ export class UIController {
         }
 
         for (const model of models) {
+            const modelInfo = this.mmdManager.getModelInfoByIndex(model.index);
+            const displayName = modelInfo ? resolveModelName(modelInfo, locale) : model.name;
             const option = document.createElement("option");
             option.value = String(model.index);
-            option.textContent = `${model.index + 1}: ${model.name}`;
+            option.textContent = `${model.index + 1}: ${displayName}`;
             option.title = model.path;
             if (!selected && timelineTarget === "model" && model.active) {
                 option.selected = true;
@@ -3162,6 +3182,7 @@ export class UIController {
 
         const previousValue = select.value;
         const models = this.mmdManager.getLoadedModels();
+        const locale = getLocale();
         select.innerHTML = "";
 
         const worldOption = document.createElement("option");
@@ -3170,9 +3191,11 @@ export class UIController {
         select.appendChild(worldOption);
 
         for (const model of models) {
+            const modelInfo = this.mmdManager.getModelInfoByIndex(model.index);
+            const displayName = modelInfo ? resolveModelName(modelInfo, locale) : model.name;
             const option = document.createElement("option");
             option.value = String(model.index);
-            option.textContent = `${model.index + 1}: ${model.name}`;
+            option.textContent = `${model.index + 1}: ${displayName}`;
             option.title = model.path;
             select.appendChild(option);
         }
@@ -3203,10 +3226,13 @@ export class UIController {
         select.appendChild(modelOption);
 
         const boneNames = this.mmdManager.getModelBoneNames(modelIndex);
+        const modelInfo = this.mmdManager.getModelInfoByIndex(modelIndex);
+        const locale = getLocale();
         for (const boneName of boneNames) {
+            const displayName = modelInfo ? resolveBoneName(modelInfo, boneName, locale) : boneName;
             const option = document.createElement("option");
             option.value = boneName;
-            option.textContent = boneName;
+            option.textContent = displayName;
             select.appendChild(option);
         }
 
@@ -5042,6 +5068,20 @@ export class UIController {
         return track;
     }
 
+    private localizeTracks(tracks: KeyframeTrack[]): KeyframeTrack[] {
+        const info = this.mmdManager.getActiveModelInfo();
+        const locale = getLocale();
+        return tracks.map((track) => ({
+            ...track,
+            displayName: resolveTrackLabel(track, info, locale),
+        }));
+    }
+
+    private getTrackDisplayName(track: KeyframeTrack): string {
+        if (track.displayName) return track.displayName;
+        return resolveTrackLabel(track, this.mmdManager.getActiveModelInfo(), getLocale());
+    }
+
     private getTrackTypeLabel(track: Pick<KeyframeTrack, "category">): string {
         switch (track.category) {
             case "camera":
@@ -5124,9 +5164,10 @@ export class UIController {
 
         const frameLabel = selectedFrame !== null ? ` @${selectedFrame}` : "";
         const trackTypeLabel = this.getTrackTypeLabel(track);
-        this.timelineSelectionLabel.textContent = `[${trackTypeLabel}] ${track.name}${frameLabel}`;
+        const trackDisplayName = this.getTrackDisplayName(track);
+        this.timelineSelectionLabel.textContent = `[${trackTypeLabel}] ${trackDisplayName}${frameLabel}`;
         const interpolationFrame = selectedFrame ?? currentFrame;
-        this.interpolationTrackNameLabel.textContent = `${trackTypeLabel}: ${track.name}`;
+        this.interpolationTrackNameLabel.textContent = `${trackTypeLabel}: ${trackDisplayName}`;
         this.interpolationFrameLabel.textContent = String(interpolationFrame);
         this.updateInterpolationPreview(track, interpolationFrame);
         this.btnKeyframeAdd.disabled = false;

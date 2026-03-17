@@ -60,14 +60,20 @@ declare global {
 
 export interface ModelInfo {
     name: string;
+    nameEn?: string;
     path: string;
     vertexCount: number;
     boneCount: number;
     boneNames: string[];
+    boneNameEnMap?: Record<string, string>;
     boneControlInfos?: BoneControlInfo[];
     morphCount: number;
     morphNames: string[];
+    morphNameEnMap?: Record<string, string>;
     morphDisplayFrames: MorphDisplayFrameInfo[];
+    morphDisplayFrameNameEnMap?: Record<string, string>;
+    rigidBodyNameEnMap?: Record<string, string>;
+    jointNameEnMap?: Record<string, string>;
 }
 
 export interface BoneControlInfo {
@@ -101,6 +107,8 @@ export type TrackCategory = 'root' | 'camera' | 'semi-standard' | 'bone' | 'morp
 export interface KeyframeTrack {
     /** Bone or morph name */
     name: string;
+    /** Display name for UI (optional) */
+    displayName?: string;
     /** Row ordering category */
     category: TrackCategory;
     /** Frame numbers that have keyframes (sorted ascending) */
