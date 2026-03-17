@@ -1,8 +1,20 @@
 import type { MmdManager, WgslMaterialShaderPresetId } from "./mmd-manager";
 import type { Timeline } from "./timeline";
 import type { BottomPanel } from "./bottom-panel";
-import { getLocale, t } from "./i18n";
-import { resolveBoneName, resolveModelName, resolveTrackLabel } from "./model-localization";
+import { getLocale, setLocale, t } from "./i18n";
+import {
+    getBoneLocale,
+    getBoneLocaleSetting,
+    getModelLocale,
+    getMorphLocale,
+    getMorphLocaleSetting,
+    resolveBoneName,
+    resolveModelName,
+    resolveTrackLabelForLocales,
+    setBoneLocaleSetting,
+    setModelLocale,
+    setMorphLocaleSetting,
+} from "./model-localization";
 import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import type {
     InterpolationChannelPreview,
@@ -174,6 +186,12 @@ export class UIController {
     private shaderPanelToggleText: HTMLElement | null = null;
     private btnToggleFullscreenUi: HTMLButtonElement | null = null;
     private fullscreenUiToggleText: HTMLElement | null = null;
+    private btnToggleLangPanel: HTMLButtonElement | null = null;
+    private langPanelEl: HTMLElement | null = null;
+    private langGlobalButtons: HTMLButtonElement[] = [];
+    private langBoneSelect: HTMLSelectElement | null = null;
+    private langMorphSelect: HTMLSelectElement | null = null;
+    private isLangPanelOpen = false;
     private btnPlay: HTMLElement;
     private btnPause: HTMLElement;
     private btnStop: HTMLElement;
@@ -280,21 +298,17 @@ export class UIController {
     private bundledWgslLastScanMs = 0;
     private refreshAaToggleUi: (() => void) | null = null;
     private readonly onLocaleChanged = (): void => {
+        setModelLocale(getLocale(), { emitEvent: false });
+        this.updateLanguagePanelUi();
         this.applyLocalizedUiState();
         this.refreshShaderPanel();
         this.refreshModelSelector();
-
-        const activeInfo = this.mmdManager.getActiveModelInfo();
-        if (this.mmdManager.getTimelineTarget() === "camera") {
-            this.bottomPanel.refreshLocalizedNames(this.getCameraPanelInfo());
-        } else if (activeInfo) {
-            this.bottomPanel.refreshLocalizedNames(activeInfo);
-        }
-
-        if (this.keyframeTracks.length > 0) {
-            this.timeline.setKeyframeTracks(this.localizeTracks(this.keyframeTracks));
-            this.updateTimelineEditState();
-        }
+        this.refreshLocalizedModelUi();
+    };
+    private readonly onModelLocaleChanged = (): void => {
+        this.updateLanguagePanelUi();
+        this.refreshModelSelector();
+        this.refreshLocalizedModelUi();
     };
 
     constructor(mmdManager: MmdManager, timeline: Timeline, bottomPanel: BottomPanel) {
@@ -330,6 +344,13 @@ export class UIController {
         this.shaderPanelToggleText = document.getElementById("shader-panel-toggle-text");
         this.btnToggleFullscreenUi = document.getElementById("btn-toggle-fullscreen-ui") as HTMLButtonElement | null;
         this.fullscreenUiToggleText = document.getElementById("fullscreen-ui-toggle-text");
+        this.btnToggleLangPanel = document.getElementById("btn-toggle-lang-panel") as HTMLButtonElement | null;
+        this.langPanelEl = document.getElementById("lang-panel");
+        this.langGlobalButtons = Array.from(
+            document.querySelectorAll<HTMLButtonElement>("#lang-panel [data-lang-global]"),
+        );
+        this.langBoneSelect = document.getElementById("lang-bone-select") as HTMLSelectElement | null;
+        this.langMorphSelect = document.getElementById("lang-morph-select") as HTMLSelectElement | null;
         this.btnPlay = document.getElementById("btn-play")!;
         this.btnPause = document.getElementById("btn-pause")!;
         this.btnStop = document.getElementById("btn-stop")!;
@@ -406,11 +427,13 @@ export class UIController {
         this.setupBottomPanelResizer();
         this.clampBottomPanelHeightToLayout();
         this.refreshShaderPanel();
+        this.updateLanguagePanelUi();
         this.installRangeNumberInputs();
         void this.reloadBundledWgslShaderFiles();
         this.updateTimelineEditState();
         this.shortcutEdgeWidthRestore = Math.max(0.01, this.mmdManager.modelEdgeWidth || 1);
         document.addEventListener("app:locale-changed", this.onLocaleChanged as EventListener);
+        document.addEventListener("app:model-locale-changed", this.onModelLocaleChanged as EventListener);
 
         window.addEventListener("beforeunload", (event) => {
             if (this.hasBackgroundExportActive()) {
@@ -433,6 +456,7 @@ export class UIController {
             this.viewportAspectResizeObserver?.disconnect();
             this.viewportAspectResizeObserver = null;
             document.removeEventListener("app:locale-changed", this.onLocaleChanged as EventListener);
+            document.removeEventListener("app:model-locale-changed", this.onModelLocaleChanged as EventListener);
         });
     }
 
@@ -500,6 +524,60 @@ export class UIController {
         });
         this.btnToggleFullscreenUi?.addEventListener("click", () => {
             this.toggleUiFullscreenMode();
+        });
+        if (this.btnToggleLangPanel && this.langPanelEl) {
+            const closePanel = (): void => {
+                if (!this.isLangPanelOpen) return;
+                this.isLangPanelOpen = false;
+                this.langPanelEl?.setAttribute("hidden", "true");
+                this.btnToggleLangPanel?.setAttribute("aria-expanded", "false");
+            };
+            const openPanel = (): void => {
+                if (this.isLangPanelOpen) return;
+                this.isLangPanelOpen = true;
+                this.langPanelEl?.removeAttribute("hidden");
+                this.btnToggleLangPanel?.setAttribute("aria-expanded", "true");
+            };
+
+            this.btnToggleLangPanel.addEventListener("click", (event) => {
+                event.stopPropagation();
+                if (this.isLangPanelOpen) {
+                    closePanel();
+                } else {
+                    openPanel();
+                }
+            });
+            this.langPanelEl.addEventListener("click", (event) => {
+                event.stopPropagation();
+            });
+            document.addEventListener("click", () => {
+                closePanel();
+            });
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") {
+                    closePanel();
+                }
+            });
+        }
+        for (const button of this.langGlobalButtons) {
+            button.addEventListener("click", () => {
+                const target = button.dataset.langGlobal;
+                if (target === "ja" || target === "en") {
+                    setLocale(target);
+                }
+            });
+        }
+        this.langBoneSelect?.addEventListener("change", () => {
+            const value = this.langBoneSelect?.value;
+            if (value === "global" || value === "ja" || value === "en") {
+                setBoneLocaleSetting(value);
+            }
+        });
+        this.langMorphSelect?.addEventListener("change", () => {
+            const value = this.langMorphSelect?.value;
+            if (value === "global" || value === "ja" || value === "en") {
+                setMorphLocaleSetting(value);
+            }
         });
         const physicsGravityAccel = document.getElementById("physics-gravity-accel") as HTMLInputElement | null;
         const physicsGravityAccelVal = document.getElementById("physics-gravity-accel-val");
@@ -1340,7 +1418,7 @@ export class UIController {
             this.refreshModelSelector();
             this.refreshShaderPanel();
             const activeLabel = active ? " [active]" : "";
-            const displayName = resolveModelName(info, getLocale());
+            const displayName = resolveModelName(info, getModelLocale());
             this.showToast(`Loaded model: ${displayName} (${totalCount})${activeLabel}`, "success");
         };
 
@@ -2912,7 +2990,7 @@ export class UIController {
     private refreshModelSelector(): void {
         const models = this.mmdManager.getLoadedModels();
         const timelineTarget = this.mmdManager.getTimelineTarget();
-        const locale = getLocale();
+        const locale = getModelLocale();
         this.modelSelect.innerHTML = "";
 
         const cameraOption = document.createElement("option");
@@ -3182,7 +3260,7 @@ export class UIController {
 
         const previousValue = select.value;
         const models = this.mmdManager.getLoadedModels();
-        const locale = getLocale();
+        const locale = getModelLocale();
         select.innerHTML = "";
 
         const worldOption = document.createElement("option");
@@ -3227,7 +3305,7 @@ export class UIController {
 
         const boneNames = this.mmdManager.getModelBoneNames(modelIndex);
         const modelInfo = this.mmdManager.getModelInfoByIndex(modelIndex);
-        const locale = getLocale();
+        const locale = getBoneLocale();
         for (const boneName of boneNames) {
             const displayName = modelInfo ? resolveBoneName(modelInfo, boneName, locale) : boneName;
             const option = document.createElement("option");
@@ -4803,6 +4881,37 @@ export class UIController {
         this.updateFullscreenUiToggleButton(this.isUiFullscreenActive);
     }
 
+    private updateLanguagePanelUi(): void {
+        if (this.langGlobalButtons.length > 0) {
+            const globalLocale = getLocale();
+            for (const button of this.langGlobalButtons) {
+                const isActive = button.dataset.langGlobal === globalLocale;
+                button.classList.toggle("is-active", isActive);
+                button.setAttribute("aria-pressed", isActive ? "true" : "false");
+            }
+        }
+        if (this.langBoneSelect) {
+            this.langBoneSelect.value = getBoneLocaleSetting();
+        }
+        if (this.langMorphSelect) {
+            this.langMorphSelect.value = getMorphLocaleSetting();
+        }
+    }
+
+    private refreshLocalizedModelUi(): void {
+        const activeInfo = this.mmdManager.getActiveModelInfo();
+        if (this.mmdManager.getTimelineTarget() === "camera") {
+            this.bottomPanel.refreshLocalizedNames(this.getCameraPanelInfo());
+        } else if (activeInfo) {
+            this.bottomPanel.refreshLocalizedNames(activeInfo);
+        }
+
+        if (this.keyframeTracks.length > 0) {
+            this.timeline.setKeyframeTracks(this.localizeTracks(this.keyframeTracks));
+            this.updateTimelineEditState();
+        }
+    }
+
     private updateGroundToggleButton(visible: boolean): void {
         this.groundToggleText.textContent = t("toolbar.ground.short");
         this.btnToggleGround.setAttribute("aria-pressed", visible ? "true" : "false");
@@ -5070,16 +5179,20 @@ export class UIController {
 
     private localizeTracks(tracks: KeyframeTrack[]): KeyframeTrack[] {
         const info = this.mmdManager.getActiveModelInfo();
-        const locale = getLocale();
+        const boneLocale = getBoneLocale();
+        const morphLocale = getMorphLocale();
         return tracks.map((track) => ({
             ...track,
-            displayName: resolveTrackLabel(track, info, locale),
+            displayName: resolveTrackLabelForLocales(track, info, { bone: boneLocale, morph: morphLocale }),
         }));
     }
 
     private getTrackDisplayName(track: KeyframeTrack): string {
         if (track.displayName) return track.displayName;
-        return resolveTrackLabel(track, this.mmdManager.getActiveModelInfo(), getLocale());
+        return resolveTrackLabelForLocales(track, this.mmdManager.getActiveModelInfo(), {
+            bone: getBoneLocale(),
+            morph: getMorphLocale(),
+        });
     }
 
     private getTrackTypeLabel(track: Pick<KeyframeTrack, "category">): string {

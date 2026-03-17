@@ -1,6 +1,13 @@
 import type { MmdManager } from "./mmd-manager";
-import { getLocale } from "./i18n";
-import { resolveBoneName, resolveModelName, resolveMorphFrameName, resolveMorphName } from "./model-localization";
+import {
+    getBoneLocale,
+    getModelLocale,
+    getMorphLocale,
+    resolveBoneName,
+    resolveModelName,
+    resolveMorphFrameName,
+    resolveMorphName,
+} from "./model-localization";
 import type { BoneControlInfo, ModelInfo, MorphDisplayFrameInfo } from "./types";
 
 type BoneSliderKey = "tx" | "ty" | "tz" | "rx" | "ry" | "rz" | "camDistance" | "camFov";
@@ -63,7 +70,7 @@ export class BottomPanel {
             return;
         }
 
-        const locale = getLocale();
+        const locale = getBoneLocale();
         for (const boneName of info.boneNames) {
             const option = document.createElement("option");
             option.value = boneName;
@@ -94,7 +101,7 @@ export class BottomPanel {
             return;
         }
 
-        const locale = getLocale();
+        const locale = getModelLocale();
         this.morphFrames.forEach((frame, index) => {
             const option = document.createElement("option");
             option.value = String(index);
@@ -114,7 +121,7 @@ export class BottomPanel {
         const bonesEl = document.getElementById("info-bones");
         const morphsEl = document.getElementById("info-morphs");
 
-        if (nameEl) nameEl.textContent = resolveModelName(info, getLocale());
+        if (nameEl) nameEl.textContent = resolveModelName(info, getModelLocale());
         if (verticesEl) verticesEl.textContent = info.vertexCount.toLocaleString();
         if (bonesEl) bonesEl.textContent = info.boneCount.toLocaleString();
         if (morphsEl) morphsEl.textContent = info.morphCount.toLocaleString();
@@ -122,19 +129,21 @@ export class BottomPanel {
 
     refreshLocalizedNames(info: ModelInfo): void {
         this.currentModelInfo = info;
-        const locale = getLocale();
+        const boneLocale = getBoneLocale();
+        const morphLocale = getMorphLocale();
+        const frameLocale = getModelLocale();
 
         for (let i = 0; i < this.boneSelect.options.length; i += 1) {
             const option = this.boneSelect.options[i];
             if (!option.value) continue;
-            option.textContent = resolveBoneName(info, option.value, locale);
+            option.textContent = resolveBoneName(info, option.value, boneLocale);
         }
 
         for (let i = 0; i < this.morphFrameSelect.options.length; i += 1) {
             const option = this.morphFrameSelect.options[i];
             const frame = this.morphFrames[i];
             if (!frame) continue;
-            option.textContent = resolveMorphFrameName(info, frame.name, locale);
+            option.textContent = resolveMorphFrameName(info, frame.name, frameLocale);
         }
 
         this.updateModelInfo(info);
@@ -438,7 +447,7 @@ export class BottomPanel {
             return;
         }
 
-        const locale = getLocale();
+        const locale = getMorphLocale();
         const info = this.currentModelInfo;
 
         for (const morphInfo of frame.morphs) {

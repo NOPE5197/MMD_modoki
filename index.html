@@ -81,6 +81,38 @@
             </svg>
             <span id="fullscreen-ui-toggle-text" data-i18n="toolbar.ui.short">UI</span>
           </button>
+          <div class="toolbar-popover" id="lang-popover">
+            <button id="btn-toggle-lang-panel" class="toolbar-btn toolbar-btn--compact" title="ボーン/モーフ名の言語" data-i18n-title="toolbar.lang.title" aria-expanded="false" aria-haspopup="dialog">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+                <circle cx="8" cy="8" r="6" />
+                <path d="M2 8h12M8 2a10 10 0 0 1 0 12M8 2a10 10 0 0 0 0 12" />
+              </svg>
+              <span data-i18n="toolbar.lang.short">Lang</span>
+            </button>
+            <div id="lang-panel" class="toolbar-lang-panel" role="dialog" aria-label="Language" data-i18n-aria-label="toolbar.lang.ariaLabel" hidden>
+              <div class="lang-panel-title" data-i18n="toolbar.lang.header">Language</div>
+              <div class="lang-global-row">
+                <button class="lang-choice" type="button" data-lang-global="ja" data-i18n="toolbar.lang.ja">Japanese</button>
+                <button class="lang-choice" type="button" data-lang-global="en" data-i18n="toolbar.lang.en">English</button>
+              </div>
+              <div class="lang-scope-row">
+                <span class="lang-scope-label" data-i18n="toolbar.lang.scope.bone">Bone</span>
+                <select id="lang-bone-select" class="panel-select">
+                  <option value="global" data-i18n="toolbar.lang.option.global">Use global</option>
+                  <option value="ja" data-i18n="toolbar.lang.ja">Japanese</option>
+                  <option value="en" data-i18n="toolbar.lang.en">English</option>
+                </select>
+              </div>
+              <div class="lang-scope-row">
+                <span class="lang-scope-label" data-i18n="toolbar.lang.scope.morph">Morph</span>
+                <select id="lang-morph-select" class="panel-select">
+                  <option value="global" data-i18n="toolbar.lang.option.global">Use global</option>
+                  <option value="ja" data-i18n="toolbar.lang.ja">Japanese</option>
+                  <option value="en" data-i18n="toolbar.lang.en">English</option>
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="toolbar-right">

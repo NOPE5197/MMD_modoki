@@ -12,9 +12,11 @@ import { UIController } from "./ui-controller";
 import { runPngSequenceExportJob } from "./png-sequence-exporter";
 import { runWebmExportJob } from "./webm-exporter";
 import { applyI18nToDom, getLocale, initializeI18n, setLocale } from "./i18n";
+import { initializeModelLocalization } from "./model-localization";
 
 document.addEventListener("DOMContentLoaded", () => {
   initializeI18n(document);
+  initializeModelLocalization();
   window.mmdI18n = {
     getLocale: () => getLocale(),
     setLocale: (locale) => {
