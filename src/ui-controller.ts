@@ -1752,20 +1752,6 @@ export class UIController {
                 return;
             }
 
-            // Ctrl + arrow: jump to previous/next keyframe point
-            if (!e.metaKey && !e.altKey && e.ctrlKey) {
-                if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-                    e.preventDefault();
-                    this.seekToAdjacentKeyframePoint(-1);
-                    return;
-                }
-                if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-                    e.preventDefault();
-                    this.seekToAdjacentKeyframePoint(1);
-                    return;
-                }
-            }
-
             const isAddKeyShortcut =
                 !hasModifier &&
                 (
@@ -1791,18 +1777,6 @@ export class UIController {
             if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "Tab" || e.code === "IntlRo")) {
                 e.preventDefault();
                 this.cycleActiveModelByShortcut(e.shiftKey ? -1 : 1);
-                return;
-            }
-
-            if (e.altKey && e.key === "ArrowLeft") {
-                e.preventDefault();
-                this.nudgeSelectedKeyframe(-1);
-                return;
-            }
-
-            if (e.altKey && e.key === "ArrowRight") {
-                e.preventDefault();
-                this.nudgeSelectedKeyframe(1);
                 return;
             }
 
@@ -1859,10 +1833,20 @@ export class UIController {
                     this.mmdManager.seekToBoundary(this.mmdManager.totalFrames);
                     break;
                 case "ArrowLeft":
+                    e.preventDefault();
                     this.mmdManager.seekTo(this.mmdManager.currentFrame - (e.shiftKey ? 10 : 1));
                     break;
                 case "ArrowRight":
+                    e.preventDefault();
                     this.mmdManager.seekTo(this.mmdManager.currentFrame + (e.shiftKey ? 10 : 1));
+                    break;
+                case "ArrowUp":
+                    e.preventDefault();
+                    this.timeline.selectAdjacentTrack(-1, ["root", "semi-standard", "bone"]);
+                    break;
+                case "ArrowDown":
+                    e.preventDefault();
+                    this.timeline.selectAdjacentTrack(1, ["root", "semi-standard", "bone"]);
                     break;
             }
 

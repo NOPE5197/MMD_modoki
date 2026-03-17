@@ -260,6 +260,35 @@ export class Timeline {
         return true;
     }
 
+    selectAdjacentTrack(direction: 1 | -1, categories?: readonly TrackCategory[]): boolean {
+        if (this.tracks.length === 0) return false;
+
+        const allowedCategories = categories ? new Set(categories) : null;
+        const startIndex = this.selectedTrackIndex >= 0 ? this.selectedTrackIndex : 0;
+
+        for (
+            let index = startIndex + direction;
+            index >= 0 && index < this.tracks.length;
+            index += direction
+        ) {
+            const track = this.tracks[index];
+            if (allowedCategories && !allowedCategories.has(track.category)) continue;
+
+            const changed = this.selectedTrackIndex !== index || this.selectedFrame !== null;
+            this.selectedTrackIndex = index;
+            this.selectedFrame = null;
+            this.ensureTrackVisible(index);
+            this.scheduleStatic();
+            this.scheduleLabel();
+            if (changed) {
+                this.emitSelectionChanged();
+            }
+            return true;
+        }
+
+        return false;
+    }
+
     // ── Resize ───────────────────────────────────────────────────────
 
     resize(): void {
@@ -617,6 +646,24 @@ export class Timeline {
 
     private emitSelectionChanged(): void {
         this.onSelectionChanged?.(this.getSelectedTrack(), this.selectedFrame);
+    }
+
+    private ensureTrackVisible(index: number): void {
+        const rowTop = index * ROW_H;
+        const rowBottom = rowTop + ROW_H;
+        const viewTop = this.trackScrollEl.scrollTop;
+        const viewBottom = viewTop + this.trackScrollEl.clientHeight;
+
+        if (rowTop < viewTop) {
+            this.trackScrollEl.scrollTop = rowTop;
+            this.labelsEl.scrollTop = rowTop;
+            return;
+        }
+        if (rowBottom > viewBottom) {
+            const nextTop = Math.max(0, rowBottom - this.trackScrollEl.clientHeight);
+            this.trackScrollEl.scrollTop = nextTop;
+            this.labelsEl.scrollTop = nextTop;
+        }
     }
 }
 
