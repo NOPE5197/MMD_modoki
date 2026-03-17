@@ -26,6 +26,7 @@ import type {
     PngSequenceExportProgress,
     PngSequenceExportState,
     ProjectOutputState,
+    RendererLayoutState,
     TimelineInterpolationPreview,
     WebmExportProgress,
     WebmExportState,
@@ -288,6 +289,7 @@ export class UIController {
     private latestWebmExportProgress: WebmExportProgress | null = null;
     private backgroundExportMonitorIntervalId: number | null = null;
     private isUiFullscreenActive = false;
+    private layoutStateSaveTimer: number | null = null;
     private postFxLutExternalPath: string | null = null;
     private postFxLutExternalText: string | null = null;
     private postFxWgslToonPath: string | null = null;
@@ -425,6 +427,7 @@ export class UIController {
         this.setupTimelineResizer();
         this.setupShaderResizer();
         this.setupBottomPanelResizer();
+        void this.restorePersistedLayoutState();
         this.clampBottomPanelHeightToLayout();
         this.refreshShaderPanel();
         this.updateLanguagePanelUi();
@@ -441,6 +444,11 @@ export class UIController {
                 event.returnValue = "";
                 return;
             }
+            if (this.layoutStateSaveTimer !== null) {
+                window.clearTimeout(this.layoutStateSaveTimer);
+                this.layoutStateSaveTimer = null;
+            }
+            void window.electronAPI.saveRendererLayoutState(this.captureLayoutState());
             this.pngSequenceExportStateUnsubscribe?.();
             this.pngSequenceExportStateUnsubscribe = null;
             this.pngSequenceExportProgressUnsubscribe?.();
@@ -3615,6 +3623,7 @@ export class UIController {
         this.clampShaderWidthToLayout();
         this.applyViewportAspectPresentation();
         this.updateShaderPanelToggleButton(visible);
+        this.schedulePersistLayoutState();
     }
 
     private updateShaderPanelToggleButton(visible: boolean): void {
@@ -3651,6 +3660,7 @@ export class UIController {
         this.appRootEl.classList.toggle("ui-presentation-mode", active);
         this.updateFullscreenUiToggleButton(active);
         this.syncMainWindowPresentationAspect();
+        this.schedulePersistLayoutState();
     }
 
     private updateFullscreenUiToggleButton(active: boolean): void {
@@ -3696,6 +3706,7 @@ export class UIController {
 
         const onPointerUp = (): void => {
             stopResize();
+            this.schedulePersistLayoutState();
         };
 
         this.timelineResizerEl.addEventListener("pointerdown", (event: PointerEvent) => {
@@ -3716,6 +3727,7 @@ export class UIController {
             this.clampBottomPanelHeightToLayout();
             this.applyViewportAspectPresentation();
             this.syncMainWindowPresentationAspect();
+            this.schedulePersistLayoutState();
         });
     }
 
@@ -3750,6 +3762,7 @@ export class UIController {
 
         const onPointerUp = (): void => {
             stopResize();
+            this.schedulePersistLayoutState();
         };
 
         this.shaderResizerEl.addEventListener("pointerdown", (event: PointerEvent) => {
@@ -3796,6 +3809,7 @@ export class UIController {
 
         const onPointerUp = (): void => {
             stopResize();
+            this.schedulePersistLayoutState();
         };
 
         this.bottomPanelResizerEl.addEventListener("pointerdown", (event: PointerEvent) => {
@@ -3928,6 +3942,71 @@ export class UIController {
             Math.min(maxHeight, currentHeight)
         );
         document.documentElement.style.setProperty("--bottom-panel-height", `${Math.round(nextHeight)}px`);
+    }
+
+    private captureLayoutState(): RendererLayoutState {
+        return {
+            timelineWidth: this.timelinePanelEl
+                ? Math.round(this.timelinePanelEl.getBoundingClientRect().width)
+                : undefined,
+            shaderPanelWidth: this.shaderPanelEl && this.isShaderPanelExpanded()
+                ? Math.round(this.shaderPanelEl.getBoundingClientRect().width)
+                : undefined,
+            bottomPanelHeight: this.bottomPanelEl
+                ? Math.round(this.bottomPanelEl.getBoundingClientRect().height)
+                : undefined,
+            shaderPanelVisible: this.isShaderPanelExpanded(),
+            uiFullscreenActive: this.isUiFullscreenActive,
+        };
+    }
+
+    private schedulePersistLayoutState(): void {
+        if (this.layoutStateSaveTimer !== null) {
+            window.clearTimeout(this.layoutStateSaveTimer);
+        }
+        this.layoutStateSaveTimer = window.setTimeout(() => {
+            this.layoutStateSaveTimer = null;
+            void window.electronAPI.saveRendererLayoutState(this.captureLayoutState());
+        }, 150);
+    }
+
+    private applyPersistedLayoutState(state: RendererLayoutState): void {
+        if (typeof state.timelineWidth === "number") {
+            document.documentElement.style.setProperty("--timeline-width", `${Math.round(state.timelineWidth)}px`);
+        }
+        if (typeof state.shaderPanelWidth === "number") {
+            document.documentElement.style.setProperty("--shader-panel-width", `${Math.round(state.shaderPanelWidth)}px`);
+        }
+        if (typeof state.bottomPanelHeight === "number") {
+            document.documentElement.style.setProperty("--bottom-panel-height", `${Math.round(state.bottomPanelHeight)}px`);
+        }
+        if (typeof state.shaderPanelVisible === "boolean") {
+            this.mainContentEl.classList.toggle("shader-panel-collapsed", !state.shaderPanelVisible);
+            this.updateShaderPanelToggleButton(state.shaderPanelVisible);
+        }
+        if (state.uiFullscreenActive === true) {
+            this.isUiFullscreenActive = true;
+            this.appRootEl.classList.add("ui-presentation-mode");
+            this.updateFullscreenUiToggleButton(true);
+        }
+
+        this.clampTimelineWidthToLayout();
+        this.clampShaderWidthToLayout();
+        this.clampBottomPanelHeightToLayout();
+        this.applyViewportAspectPresentation();
+        this.syncMainWindowPresentationAspect();
+    }
+
+    private async restorePersistedLayoutState(): Promise<void> {
+        try {
+            const state = await window.electronAPI.loadRendererLayoutState();
+            if (!state) {
+                return;
+            }
+            this.applyPersistedLayoutState(state);
+        } catch {
+            // Ignore layout restore errors and continue with defaults.
+        }
     }
 
     private refreshShaderPanel(): void {

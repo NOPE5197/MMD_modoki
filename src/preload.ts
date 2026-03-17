@@ -4,6 +4,7 @@ import type {
     PngSequenceExportProgress,
     PngSequenceExportRequest,
     PngSequenceExportState,
+    RendererLayoutState,
     WebmExportProgress,
     WebmExportRequest,
     WebmExportState
@@ -18,6 +19,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('dialog:saveWebm', defaultFileName),
     snapMainWindowContentAspect: (aspectRatio: number) =>
         ipcRenderer.invoke('window:snapMainWindowContentAspect', aspectRatio),
+    saveRendererLayoutState: (state: RendererLayoutState) =>
+        ipcRenderer.invoke('window:saveRendererLayoutState', state),
+    loadRendererLayoutState: () =>
+        ipcRenderer.invoke('window:loadRendererLayoutState'),
     getPathForDroppedFile: (file: File) => {
         try {
             const filePath = webUtils.getPathForFile(file);

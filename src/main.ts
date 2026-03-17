@@ -8,6 +8,7 @@ import type {
   PngSequenceExportProgress,
   PngSequenceExportRequest,
   PngSequenceExportState,
+  RendererLayoutState,
   WebmExportLaunchResult,
   WebmExportProgress,
   WebmExportRequest,
@@ -47,6 +48,8 @@ const MAIN_WINDOW_DEFAULT_HEIGHT = Math.round(MAIN_WINDOW_DEFAULT_WIDTH / MAIN_W
 const MAIN_WINDOW_MIN_WIDTH = 1120;
 const MAIN_WINDOW_MIN_HEIGHT = Math.round(MAIN_WINDOW_MIN_WIDTH / MAIN_WINDOW_ASPECT_RATIO);
 const ALLOWED_PRODUCTION_PROTOCOLS = new Set(['file:', 'data:', 'blob:', 'devtools:']);
+const WINDOW_STATE_FILE_NAME = 'window-state.json';
+const RENDERER_LAYOUT_STATE_FILE_NAME = 'renderer-layout-state.json';
 
 const pngSequenceExportJobMap = new Map<string, PngSequenceExportRequest>();
 const pngSequenceExportActiveCountByOwner = new Map<number, number>();
@@ -57,11 +60,146 @@ const webmExportOwnerByJobId = new Map<string, number>();
 const webmExportCleanupByJobId = new Map<string, () => void>();
 const webmSaveSessionMap = new Map<string, { filePath: string; handle: fs.promises.FileHandle }>();
 const ensuredDirectoryPathSet = new Set<string>();
+let pendingWindowStateWrite: Promise<void> = Promise.resolve();
+let pendingRendererLayoutStateWrite: Promise<void> = Promise.resolve();
+
+type MainWindowState = {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+  isMaximized?: boolean;
+  isFullScreen?: boolean;
+};
 
 const ensureDirectoryExists = async (directoryPath: string): Promise<void> => {
   if (ensuredDirectoryPathSet.has(directoryPath)) return;
   await fs.promises.mkdir(directoryPath, { recursive: true });
   ensuredDirectoryPathSet.add(directoryPath);
+};
+
+const getAppStateFilePath = (fileName: string): string => path.join(app.getPath('userData'), fileName);
+
+const readJsonFile = async <T>(filePath: string): Promise<T | null> => {
+  try {
+    const text = await fs.promises.readFile(filePath, 'utf-8');
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+};
+
+const writeJsonFile = async (filePath: string, data: unknown): Promise<void> => {
+  await ensureDirectoryExists(path.dirname(filePath));
+  await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+};
+
+const isNumberInRange = (value: unknown, min: number, max: number): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+
+const sanitizeMainWindowState = (state: unknown): MainWindowState | null => {
+  if (!state || typeof state !== 'object') return null;
+
+  const candidate = state as Record<string, unknown>;
+  const width = isNumberInRange(candidate.width, MAIN_WINDOW_MIN_WIDTH, 10000)
+    ? Math.round(candidate.width)
+    : MAIN_WINDOW_DEFAULT_WIDTH;
+  const height = isNumberInRange(candidate.height, MAIN_WINDOW_MIN_HEIGHT, 10000)
+    ? Math.round(candidate.height)
+    : MAIN_WINDOW_DEFAULT_HEIGHT;
+  const x = typeof candidate.x === 'number' && Number.isFinite(candidate.x) ? Math.round(candidate.x) : undefined;
+  const y = typeof candidate.y === 'number' && Number.isFinite(candidate.y) ? Math.round(candidate.y) : undefined;
+
+  return {
+    width,
+    height,
+    x,
+    y,
+    isMaximized: candidate.isMaximized === true,
+    isFullScreen: candidate.isFullScreen === true,
+  };
+};
+
+const sanitizeRendererLayoutState = (state: unknown): RendererLayoutState | null => {
+  if (!state || typeof state !== 'object') return null;
+  const candidate = state as Record<string, unknown>;
+  const nextState: RendererLayoutState = {};
+
+  if (isNumberInRange(candidate.timelineWidth, 160, 5000)) {
+    nextState.timelineWidth = Math.round(candidate.timelineWidth);
+  }
+  if (isNumberInRange(candidate.shaderPanelWidth, 220, 5000)) {
+    nextState.shaderPanelWidth = Math.round(candidate.shaderPanelWidth);
+  }
+  if (isNumberInRange(candidate.bottomPanelHeight, 132, 5000)) {
+    nextState.bottomPanelHeight = Math.round(candidate.bottomPanelHeight);
+  }
+  if (typeof candidate.shaderPanelVisible === 'boolean') {
+    nextState.shaderPanelVisible = candidate.shaderPanelVisible;
+  }
+  if (typeof candidate.uiFullscreenActive === 'boolean') {
+    nextState.uiFullscreenActive = candidate.uiFullscreenActive;
+  }
+
+  return Object.keys(nextState).length > 0 ? nextState : null;
+};
+
+const isBoundsVisibleOnAnyDisplay = (bounds: Electron.Rectangle): boolean =>
+  screen.getAllDisplays().some((display) => {
+    const overlapWidth = Math.min(bounds.x + bounds.width, display.workArea.x + display.workArea.width)
+      - Math.max(bounds.x, display.workArea.x);
+    const overlapHeight = Math.min(bounds.y + bounds.height, display.workArea.y + display.workArea.height)
+      - Math.max(bounds.y, display.workArea.y);
+    return overlapWidth >= 80 && overlapHeight >= 80;
+  });
+
+const getMainWindowStateForSave = (window: BrowserWindow): MainWindowState => {
+  const bounds = window.isMaximized() || window.isFullScreen()
+    ? window.getNormalBounds()
+    : window.getBounds();
+
+  return {
+    width: Math.max(MAIN_WINDOW_MIN_WIDTH, Math.round(bounds.width)),
+    height: Math.max(MAIN_WINDOW_MIN_HEIGHT, Math.round(bounds.height)),
+    x: Math.round(bounds.x),
+    y: Math.round(bounds.y),
+    isMaximized: window.isMaximized(),
+    isFullScreen: window.isFullScreen(),
+  };
+};
+
+const loadMainWindowState = async (): Promise<MainWindowState | null> => {
+  const filePath = getAppStateFilePath(WINDOW_STATE_FILE_NAME);
+  const saved = sanitizeMainWindowState(await readJsonFile<MainWindowState>(filePath));
+  if (!saved) return null;
+
+  if (saved.x === undefined || saved.y === undefined) {
+    return saved;
+  }
+
+  const bounds = {
+    x: saved.x,
+    y: saved.y,
+    width: saved.width,
+    height: saved.height,
+  };
+  return isBoundsVisibleOnAnyDisplay(bounds) ? saved : { ...saved, x: undefined, y: undefined };
+};
+
+const queueMainWindowStateWrite = (state: MainWindowState): void => {
+  const filePath = getAppStateFilePath(WINDOW_STATE_FILE_NAME);
+  pendingWindowStateWrite = pendingWindowStateWrite
+    .catch(() => undefined)
+    .then(() => writeJsonFile(filePath, state))
+    .catch(() => undefined);
+};
+
+const queueRendererLayoutStateWrite = (state: RendererLayoutState): void => {
+  const filePath = getAppStateFilePath(RENDERER_LAYOUT_STATE_FILE_NAME);
+  pendingRendererLayoutStateWrite = pendingRendererLayoutStateWrite
+    .catch(() => undefined)
+    .then(() => writeJsonFile(filePath, state))
+    .catch(() => undefined);
 };
 
 const sendPngSequenceExportState = (
@@ -347,10 +485,13 @@ const configureSessionSecurity = (): void => {
   });
 };
 
-const createWindow = () => {
+const createWindow = async () => {
+  const savedState = await loadMainWindowState();
   const mainWindow = new BrowserWindow({
-    width: MAIN_WINDOW_DEFAULT_WIDTH,
-    height: MAIN_WINDOW_DEFAULT_HEIGHT,
+    width: savedState?.width ?? MAIN_WINDOW_DEFAULT_WIDTH,
+    height: savedState?.height ?? MAIN_WINDOW_DEFAULT_HEIGHT,
+    x: savedState?.x,
+    y: savedState?.y,
     useContentSize: true,
     minWidth: MAIN_WINDOW_MIN_WIDTH,
     minHeight: MAIN_WINDOW_MIN_HEIGHT,
@@ -365,7 +506,24 @@ const createWindow = () => {
     },
   });
   mainWindow.setMenuBarVisibility(false);
-  snapWindowContentAspect(mainWindow, MAIN_WINDOW_ASPECT_RATIO);
+
+  let saveWindowStateTimer: NodeJS.Timeout | null = null;
+  const scheduleWindowStateSave = (): void => {
+    if (saveWindowStateTimer) {
+      clearTimeout(saveWindowStateTimer);
+    }
+    saveWindowStateTimer = setTimeout(() => {
+      saveWindowStateTimer = null;
+      queueMainWindowStateWrite(getMainWindowStateForSave(mainWindow));
+    }, 150);
+  };
+
+  if (savedState?.isMaximized) {
+    mainWindow.maximize();
+  }
+  if (savedState?.isFullScreen) {
+    mainWindow.setFullScreen(true);
+  }
 
   // Load the app
   void loadEditorWindow(mainWindow);
@@ -380,7 +538,10 @@ const createWindow = () => {
     const activeExports =
       (pngSequenceExportActiveCountByOwner.get(ownerId) ?? 0)
       + (webmExportActiveCountByOwner.get(ownerId) ?? 0);
-    if (activeExports <= 0) return;
+    if (activeExports <= 0) {
+      queueMainWindowStateWrite(getMainWindowStateForSave(mainWindow));
+      return;
+    }
 
     event.preventDefault();
     void dialog.showMessageBox(mainWindow, {
@@ -393,16 +554,33 @@ const createWindow = () => {
       detail: 'Please wait until export finishes before closing the main window.',
       noLink: true,
     });
+    return;
   });
 
   mainWindow.once('ready-to-show', () => {
+    if (mainWindow.isMaximized() || mainWindow.isFullScreen()) {
+      return;
+    }
     snapWindowContentAspect(mainWindow, MAIN_WINDOW_ASPECT_RATIO);
+  });
+
+  mainWindow.on('resize', scheduleWindowStateSave);
+  mainWindow.on('move', scheduleWindowStateSave);
+  mainWindow.on('maximize', scheduleWindowStateSave);
+  mainWindow.on('unmaximize', scheduleWindowStateSave);
+  mainWindow.on('enter-full-screen', scheduleWindowStateSave);
+  mainWindow.on('leave-full-screen', scheduleWindowStateSave);
+  mainWindow.on('closed', () => {
+    if (saveWindowStateTimer) {
+      clearTimeout(saveWindowStateTimer);
+      saveWindowStateTimer = null;
+    }
   });
 };
 
 app.on('ready', () => {
   configureSessionSecurity();
-  createWindow();
+  void createWindow();
 });
 
 // IPC Handlers
@@ -459,7 +637,22 @@ ipcMain.handle('window:snapMainWindowContentAspect', async (event, aspectRatio: 
   }
 
   snapWindowContentAspect(ownerWindow, aspectRatio);
+  queueMainWindowStateWrite(getMainWindowStateForSave(ownerWindow));
   return true;
+});
+
+ipcMain.handle('window:saveRendererLayoutState', async (_event, state: RendererLayoutState) => {
+  const sanitized = sanitizeRendererLayoutState(state);
+  if (!sanitized) {
+    return false;
+  }
+  queueRendererLayoutStateWrite(sanitized);
+  return true;
+});
+
+ipcMain.handle('window:loadRendererLayoutState', async () => {
+  const filePath = getAppStateFilePath(RENDERER_LAYOUT_STATE_FILE_NAME);
+  return sanitizeRendererLayoutState(await readJsonFile<RendererLayoutState>(filePath));
 });
 
 ipcMain.handle('file:readBinary', async (_event, filePath: string) => {

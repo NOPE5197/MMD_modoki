@@ -3,6 +3,8 @@ export interface ElectronAPI {
     openDirectoryDialog: () => Promise<string | null>;
     saveWebmDialog: (defaultFileName?: string) => Promise<string | null>;
     snapMainWindowContentAspect: (aspectRatio: number) => Promise<boolean>;
+    saveRendererLayoutState: (state: RendererLayoutState) => Promise<boolean>;
+    loadRendererLayoutState: () => Promise<RendererLayoutState | null>;
     getPathForDroppedFile: (file: File) => string | null;
     readBinaryFile: (filePath: string) => Promise<Buffer | null>;
     readTextFile: (filePath: string) => Promise<string | null>;
@@ -46,6 +48,14 @@ export interface ElectronAPI {
 }
 
 export type UiLocale = "ja" | "en";
+
+export interface RendererLayoutState {
+    timelineWidth?: number;
+    shaderPanelWidth?: number;
+    bottomPanelHeight?: number;
+    shaderPanelVisible?: boolean;
+    uiFullscreenActive?: boolean;
+}
 
 declare global {
     interface Window {
