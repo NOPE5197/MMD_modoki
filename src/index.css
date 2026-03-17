@@ -2319,10 +2319,12 @@ body.bottom-panel-resizing {
 }
 
 .volume-value {
+  display: inline-block;
   font-size: 10px;
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
-  min-width: 3ch;
+  min-width: 4ch;
   text-align: right;
 }
 
