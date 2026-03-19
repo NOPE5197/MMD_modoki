@@ -27,6 +27,7 @@ import type {
     PngSequenceExportState,
     ProjectOutputState,
     RendererLayoutState,
+    TrackCategory,
     TimelineInterpolationPreview,
     WebmExportProgress,
     WebmExportState,

@@ -53,6 +53,7 @@ export class BottomPanel {
     }
 
     updateBoneControls(info: ModelInfo): void {
+        const previousBoneName = this.currentBoneName;
         this.currentModelInfo = info;
         this.boneSelect.innerHTML = "";
         this.boneSliders.clear();
@@ -79,7 +80,10 @@ export class BottomPanel {
         }
 
         this.boneSelect.disabled = false;
-        this.setSelectedBone(info.boneNames[0]);
+        const preferredBoneName = previousBoneName && info.boneNames.includes(previousBoneName)
+            ? previousBoneName
+            : info.boneNames[0];
+        this.setSelectedBone(preferredBoneName);
     }
 
     updateMorphControls(info: ModelInfo): void {
